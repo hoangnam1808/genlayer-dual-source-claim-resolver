@@ -120,6 +120,15 @@ Basic constructor validation is also applied to claims and source URLs.
 
 The contract was tested using `Normal (Full Consensus)` mode.
 
+The current contract source was validated with `genvm-lint check` before redeployment.
+
+```text
+✓ Lint passed (3 checks)
+✓ Validation passed
+```
+
+The nondeterministic web and LLM calls are directly reachable from the GenVM-recognized consensus execution path.
+
 | Test | Result |
 | --- | --- |
 | Both sources support claim | ✅ `TRUE` |
