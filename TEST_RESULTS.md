@@ -7,6 +7,7 @@ The tests below were executed in **GenLayer Studio** using:
 - Execution mode: `Normal (Full Consensus)`
 - GenLayer Python SDK: `v0.2.16`
 - Contract: `contracts/dual_source_claim_resolver.py`
+- GenVM source checks: `genvm-lint check` — **Lint passed (3 checks), Validation passed**
 - Resolution model: two independently fetched and evaluated web sources
 
 The objective was to verify definitive agreement, disagreement, and source-failure behavior.
@@ -24,7 +25,24 @@ The objective was to verify definitive agreement, disagreement, and source-failu
 | Conflict state persistence | Retryable | ✅ `has_resolved = false` |
 
 ---
+## GenVM Lint Validation
 
+Before redeployment, the corrected contract source was checked using:
+
+```text
+genvm-lint check dual_source_claim_resolver_v2.py
+```
+
+Result:
+
+```text
+✓ Lint passed (3 checks)
+✓ Validation passed
+```
+
+The nondeterministic web and LLM calls were restructured so they are directly reachable from the GenVM-recognized consensus execution path.
+
+This validation was completed before the V2 contract was redeployed and the four runtime test cases below were executed.
 ## Test 1 — Both Sources Support
 
 ### Claim
@@ -65,8 +83,7 @@ Transaction result:
 
 Explorer:
 
-https://explorer-studio.genlayer.com/tx/0x842b82c4433e49bfa957de2f8e38983e6807ff32cdccf34bb629d46db7eb15af
-
+https://explorer-studio.genlayer.com/tx/0xa7abf1a019c0a01fc7c4aae95c60f8d3727c766bcd3c4d74c2112eb8cca3da19
 ### Observation
 
 Both independently evaluated sources supported the claim.
@@ -103,7 +120,7 @@ Transaction result:
 
 Explorer:
 
-https://explorer-studio.genlayer.com/tx/0x760a8f9cd6a8d944ba121bf35abe2054c5c1423c3ae682b02acf183212934bbb
+https://explorer-studio.genlayer.com/tx/0xb1eda2eb01874a8e4c57bdad9227ea75af0814428654433bdd99ddcced272c56
 
 ### Observation
 
@@ -155,7 +172,7 @@ Transaction result:
 
 Explorer:
 
-https://explorer-studio.genlayer.com/tx/0x4c40fb7fc10ce17c4575ba713e0468d904142a6f3c5f96eca29741f0796d035e
+https://explorer-studio.genlayer.com/tx/0x455c1e8447b8a0510f050c5c4abe34782a8617f8607315f5e311d3c3a42b5768
 
 ### Observation
 
@@ -207,7 +224,7 @@ Transaction result:
 
 Explorer:
 
-https://explorer-studio.genlayer.com/tx/0xec8332ca2dc301513eb515192c9c5df34508bd8ff11f51c0644438368e1d28a3
+https://explorer-studio.genlayer.com/tx/0x14f8766b5502f922ae62d0fe4cba0df354c781d93dbffe610e2f2baabfa64006
 
 ### State After Resolution Attempt
 
