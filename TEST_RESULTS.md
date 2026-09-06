@@ -9,28 +9,30 @@ The tests below were executed in **GenLayer Studio** using:
 - Contract: `contracts/dual_source_claim_resolver.py`
 - GenVM source checks: `genvm-lint check` — **Lint passed (3 checks), Validation passed**
 - Resolution model: two independently fetched and evaluated web sources
+- Adjudication policy: **single-shot finalization per deployed resolver instance**
 
-The objective was to verify definitive agreement, disagreement, and source-failure behavior.
+The objective was to verify definitive agreement, disagreement, source-failure behavior, and protection against repeated stochastic rerolls of unchanged evidence.
 
 ---
 
 ## Summary
 
-| Test case | Expected | Actual |
-| --- | --- | --- |
-| Both sources support claim | `TRUE` | ✅ `TRUE` |
-| Both sources refute claim | `FALSE` | ✅ `FALSE` |
-| One source unavailable | `SOURCE_UNAVAILABLE` | ✅ `SOURCE_UNAVAILABLE` |
-| Sources directly conflict | `CONFLICTING_EVIDENCE` | ✅ `CONFLICTING_EVIDENCE` |
-| Conflict state persistence | Retryable | ✅ `has_resolved = false` |
+| Test case | Decision / Result | `is_finalized` | `has_resolved` |
+| --- | --- | --- | --- |
+| Both sources support claim | ✅ `TRUE` | `true` | `true` |
+| Both sources refute claim | ✅ `FALSE` | `true` | `true` |
+| One source unavailable | ✅ `SOURCE_UNAVAILABLE` | `true` | `false` |
+| Sources directly conflict | ✅ `CONFLICTING_EVIDENCE` | `true` | `false` |
+| Retry unchanged finalized evidence | ✅ Reverted: `Adjudication already finalized` | — | — |
 
 ---
+
 ## GenVM Lint Validation
 
-Before redeployment, the corrected contract source was checked using:
+Before redeployment, the corrected V3 contract source was checked using:
 
 ```text
-genvm-lint check dual_source_claim_resolver_v2.py
+genvm-lint check dual_source_claim_resolver_v3.py
 ```
 
 Result:
@@ -40,9 +42,14 @@ Result:
 ✓ Validation passed
 ```
 
-The nondeterministic web and LLM calls were restructured so they are directly reachable from the GenVM-recognized consensus execution path.
+The nondeterministic web and LLM calls remain directly reachable from the GenVM-recognized consensus execution path.
 
-This validation was completed before the V2 contract was redeployed and the four runtime test cases below were executed.
+The V3 state machine additionally finalizes every accepted adjudication outcome, preventing repeated evaluation of unchanged evidence on the same resolver instance.
+
+This validation was completed before V3 was redeployed and the runtime tests below were executed.
+
+---
+
 ## Test 1 — Both Sources Support
 
 ### Claim
@@ -69,7 +76,10 @@ https://docs.genlayer.com/understand-genlayer-protocol/core-concepts/web-data-ac
 
 ```json
 {
+  "claim": "GenLayer Intelligent Contracts can directly access web data without relying on traditional oracles.",
   "decision": "TRUE",
+  "has_resolved": true,
+  "is_finalized": true,
   "source1_status": "AVAILABLE",
   "source1_verdict": "SUPPORTS",
   "source2_status": "AVAILABLE",
@@ -83,12 +93,22 @@ Transaction result:
 
 Explorer:
 
-https://explorer-studio.genlayer.com/tx/0xa7abf1a019c0a01fc7c4aae95c60f8d3727c766bcd3c4d74c2112eb8cca3da19
+https://explorer-studio.genlayer.com/tx/0x4bf2f8174adf2474c5703c35b6791ae26b655d59451ff3c3a8ef69a85d2e59a8
+
 ### Observation
 
 Both independently evaluated sources supported the claim.
 
-The contract therefore finalized the claim as `TRUE`.
+The contract therefore produced the definitive binary decision `TRUE`.
+
+Because the adjudication is definitive:
+
+```text
+has_resolved = true
+is_finalized = true
+```
+
+The resolver instance cannot be adjudicated again.
 
 ---
 
@@ -106,7 +126,10 @@ The same two official GenLayer documentation sources were used.
 
 ```json
 {
+  "claim": "GenLayer Intelligent Contracts cannot directly access web data without relying on traditional oracles.",
   "decision": "FALSE",
+  "has_resolved": true,
+  "is_finalized": true,
   "source1_status": "AVAILABLE",
   "source1_verdict": "REFUTES",
   "source2_status": "AVAILABLE",
@@ -120,13 +143,22 @@ Transaction result:
 
 Explorer:
 
-https://explorer-studio.genlayer.com/tx/0xb1eda2eb01874a8e4c57bdad9227ea75af0814428654433bdd99ddcced272c56
+https://explorer-studio.genlayer.com/tx/0x1499d5b35194bdedff5f2d8d591d19af71953b28c40352dc0be088224ae68e16
 
 ### Observation
 
 Both sources independently refuted the claim.
 
-The contract therefore finalized the claim as `FALSE`.
+The contract therefore produced the definitive binary decision `FALSE`.
+
+Because the adjudication is definitive:
+
+```text
+has_resolved = true
+is_finalized = true
+```
+
+The resolver instance cannot be adjudicated again.
 
 ---
 
@@ -158,7 +190,10 @@ https://www.bbc.com/sport/football/scores-fixtures/2099-01-01
 
 ```json
 {
+  "claim": "GenLayer Intelligent Contracts can directly access web data without relying on traditional oracles.",
   "decision": "SOURCE_UNAVAILABLE",
+  "has_resolved": false,
+  "is_finalized": true,
   "source1_status": "AVAILABLE",
   "source1_verdict": "SUPPORTS",
   "source2_status": "SOURCE_UNAVAILABLE",
@@ -172,15 +207,33 @@ Transaction result:
 
 Explorer:
 
-https://explorer-studio.genlayer.com/tx/0x455c1e8447b8a0510f050c5c4abe34782a8617f8607315f5e311d3c3a42b5768
+https://explorer-studio.genlayer.com/tx/0xd5557b70a186bcddd66ec1aaaae7e60c7569c2c2281d33a4a9197ee235ba3a44
 
 ### Observation
 
 The contract did not force a binary decision when one required evidence source could not be fetched.
 
-Instead, it returned `SOURCE_UNAVAILABLE`.
+Instead, it returned:
 
-The claim remained retryable rather than being permanently finalized.
+```text
+SOURCE_UNAVAILABLE
+```
+
+This is not considered a definitive binary resolution, so:
+
+```text
+has_resolved = false
+```
+
+However, the adjudication of this deployed claim/evidence instance is complete:
+
+```text
+is_finalized = true
+```
+
+The same instance therefore cannot be repeatedly rerolled against unchanged evidence.
+
+If evidence availability changes, a new resolver instance must be created.
 
 ---
 
@@ -206,7 +259,9 @@ https://raw.githubusercontent.com/hoangnam1808/genlayer-dual-source-claim-resolv
 https://raw.githubusercontent.com/hoangnam1808/genlayer-dual-source-claim-resolver/main/evidence/refutes.md
 ```
 
-### Result
+### First Adjudication
+
+The first call to `resolve()` successfully produced:
 
 ```json
 {
@@ -220,36 +275,105 @@ https://raw.githubusercontent.com/hoangnam1808/genlayer-dual-source-claim-resolv
 
 Transaction result:
 
-`SUCCESS / FINALIZED`
+`SUCCESS / ACCEPTED`
 
 Explorer:
 
-https://explorer-studio.genlayer.com/tx/0x14f8766b5502f922ae62d0fe4cba0df354c781d93dbffe610e2f2baabfa64006
+https://explorer-studio.genlayer.com/tx/0xb755c0e64935dbbd089f3d1562cf4fe67fb9d71c2586951632d1788530e621ae
 
-### State After Resolution Attempt
+### State After First Adjudication
+
+A subsequent `get_resolution_data()` call returned:
 
 ```json
 {
+  "claim": "The Crypto Lab test claim is true.",
   "decision": "CONFLICTING_EVIDENCE",
+  "has_resolved": false,
+  "is_finalized": true,
+  "source1_status": "AVAILABLE",
   "source1_verdict": "SUPPORTS",
-  "source2_verdict": "REFUTES",
-  "has_resolved": false
+  "source2_status": "AVAILABLE",
+  "source2_verdict": "REFUTES"
 }
 ```
 
-### Validator Observation
+The result remains non-binary:
 
-During this test, quorum reached an accepted consensus even though one independently evaluating validator disagreed with the accepted result.
+```text
+has_resolved = false
+```
 
-This is not treated as a contract failure.
+but the current adjudication is permanently completed:
 
-Instead, it demonstrates an important property of nondeterministic adjudication: independently evaluating validators may interpret evidence differently, while GenLayer consensus determines whether sufficient agreement exists.
+```text
+is_finalized = true
+```
 
 ### Observation
 
-The resolver successfully represented disagreement explicitly instead of forcing the claim into `TRUE` or `FALSE`.
+The resolver explicitly preserved the disagreement instead of forcing the evidence into `TRUE` or `FALSE`.
 
-Because the evidence conflicted, the claim remained retryable.
+Unlike the previous implementation, the conflicting result cannot be repeatedly rerun against the same deployed claim/evidence instance.
+
+---
+
+## Test 5 — Retry Protection on Unchanged Conflicting Evidence
+
+After Test 4 finalized the resolver instance as `CONFLICTING_EVIDENCE`, `resolve()` was called again on the exact same deployed contract instance with unchanged claim and evidence.
+
+Explorer:
+
+https://explorer-studio.genlayer.com/tx/0xa7aa6feec2a3f25a656b92e9913d158d1b10e053dfd95252a77304b7af624208
+
+Transaction result:
+
+`ERROR / ACCEPTED`
+
+The call reverted with:
+
+```text
+Adjudication already finalized
+```
+
+### Observation
+
+This directly addresses the stochastic-reroll issue identified during steward review.
+
+Without this protection, a caller could repeatedly adjudicate the same ambiguous or conflicting evidence until one nondeterministic round happened to produce:
+
+```text
+SUPPORTS + SUPPORTS
+```
+
+or:
+
+```text
+REFUTES + REFUTES
+```
+
+and then permanently finalize that stochastic outcome.
+
+V3 prevents this behavior.
+
+Every accepted adjudication now sets:
+
+```text
+is_finalized = true
+```
+
+regardless of whether the outcome is:
+
+- `TRUE`
+- `FALSE`
+- `CONFLICTING_EVIDENCE`
+- `SOURCE_UNAVAILABLE`
+- `UNDETERMINED`
+- `INVALID_RESULT`
+
+Any subsequent call to `resolve()` on that same instance is rejected.
+
+Revised or newly available evidence requires deployment of a new resolver instance.
 
 ---
 
@@ -262,37 +386,88 @@ Two sources independently evaluated
                 ↓
                TRUE
                 ↓
-             Finalize
+   has_resolved = true
+   is_finalized = true
+                ↓
+       No further rerolls
+```
 
+```text
 Two sources independently evaluated
                 ↓
          Same REFUTE verdict
                 ↓
                FALSE
                 ↓
-             Finalize
+   has_resolved = true
+   is_finalized = true
+                ↓
+       No further rerolls
+```
 
+```text
 Sources disagree
                 ↓
      CONFLICTING_EVIDENCE
                 ↓
-       Remain retryable
+   has_resolved = false
+   is_finalized = true
+                ↓
+       No further rerolls
+```
 
+```text
 Required source unavailable
                 ↓
       SOURCE_UNAVAILABLE
                 ↓
-       Remain retryable
+   has_resolved = false
+   is_finalized = true
+                ↓
+       No further rerolls
 ```
+
+```text
+New or revised evidence
+                ↓
+     Deploy new resolver instance
+                ↓
+        New adjudication
+```
+
+---
+
+## Finalization Policy
+
+Each deployed resolver instance now permits exactly one accepted adjudication.
+
+`is_finalized` records whether the current claim/evidence instance has completed that adjudication.
+
+`has_resolved` has a narrower meaning:
+
+```text
+has_resolved = true
+```
+
+only when the result is the definitive binary outcome `TRUE` or `FALSE`.
+
+This distinction allows the contract to preserve uncertainty without allowing indefinite stochastic retries.
+
+---
 
 ## Main Finding
 
 The contract demonstrates a reusable evidence-adjudication pattern in which:
 
-- validators independently fetch and evaluate evidence;
+- validators independently fetch and evaluate two evidence sources;
 - external source failures become explicit application states;
 - conflicting evidence is represented rather than hidden;
-- only dual-source agreement produces a final binary resolution;
-- ambiguous or unavailable evidence remains retryable.
+- dual-source agreement produces definitive `TRUE` or `FALSE` resolution;
+- non-definitive outcomes preserve uncertainty without remaining indefinitely rerollable;
+- every accepted adjudication finalizes the deployed resolver instance;
+- repeated calls against unchanged evidence are rejected;
+- new or changed evidence requires a new resolver instance.
 
-The design does **not** claim that agreement between two sources guarantees objective truth. It demonstrates how GenLayer Intelligent Contracts can preserve uncertainty and disagreement as explicit contract states rather than forcing nondeterministic evidence into a binary answer.
+The design does **not** claim that agreement between two sources guarantees objective truth.
+
+It demonstrates how GenLayer Intelligent Contracts can preserve uncertainty and disagreement as explicit contract states while preventing repeated nondeterministic evaluation from being used to grind toward a preferred permanent result.
