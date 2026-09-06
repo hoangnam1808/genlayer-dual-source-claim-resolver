@@ -18,6 +18,7 @@ class DualSourceClaimResolver(gl.Contract):
     source2_status: str
     source2_verdict: str
     has_resolved: bool
+    is_finalized: bool
 
     def __init__(
         self,
@@ -63,12 +64,13 @@ class DualSourceClaimResolver(gl.Contract):
         self.source2_verdict = "NOT_EVALUATED"
 
         self.has_resolved = False
+        self.is_finalized = False
 
     @gl.public.write
     def resolve(self) -> typing.Any:
 
-        if self.has_resolved:
-            raise gl.vm.UserError("Already resolved")
+        if self.is_finalized:
+            raise gl.vm.UserError("Adjudication already finalized")
 
         claim = self.claim
         source1_url = self.source1_url
@@ -381,7 +383,11 @@ clearly establish either side.
         self.source2_status = result["source2_status"]
         self.source2_verdict = result["source2_verdict"]
 
-        # Only definitive agreement finalizes the claim.
+        # Every accepted adjudication is single-shot.
+        # This prevents stochastic rerolling against unchanged evidence.
+        self.is_finalized = True
+
+        # has_resolved means a definitive binary conclusion was reached.
         if result["decision"] in ("TRUE", "FALSE"):
             self.has_resolved = True
 
@@ -397,6 +403,7 @@ clearly establish either side.
             "source2_status": self.source2_status,
             "source2_verdict": self.source2_verdict,
             "has_resolved": self.has_resolved,
+            "is_finalized": self.is_finalized,
         }
 
     @gl.public.view
